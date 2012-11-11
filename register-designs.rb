@@ -329,7 +329,8 @@ class CouchDesign
     @contents["_id"]
   end
 
-  def rev()
+  def rev(newRev = nil)
+    @contents["_rev"] = newRev if newRev
     @contents["_rev"]
   end
 
@@ -615,6 +616,7 @@ ARGV.each { |design_dir|
     if status["error"]
       error("#{doc.id}: #{status["error"]}: #{status["reason"]}")
     else
+      design.rev(status["rev"])
       verbose "  [revision] #{design.rev}"
     end
   }
