@@ -7,10 +7,16 @@ require 'uri'
 require 'optparse'
 require 'mime/types'
 
+#
+# Modify below constants for your system
+#
 JS_BIN = "js"
 CURL_BIN = "curl"
 COUCH_URL="http://localhost:5984/sedis"
 
+#
+# Do not modify below this -- cinsk
+#
 JS_HEADER = "var _sum = function(keys, values, rereduce) { return 0; }
 var _count = function(keys, values, rereduce) { return 0; }
 var _stats = function(keys, values, rereduce) { return 0; }
