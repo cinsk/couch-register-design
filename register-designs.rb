@@ -256,7 +256,7 @@ class Curl
 end
 
 class CouchDesign
-  def self.eval_js(file, verbose = true)
+  def eval_js(file, verbose = true)
     ofile = Tempfile.new("couchlint")
     #puts "temp: #{ofile.path}"
 
@@ -308,7 +308,11 @@ class CouchDesign
 
     ensure
       ofile.close
-      ofile.unlink
+      if DEBUG
+        puts "tempfile: #{ofile.path}"
+      else
+        ofile.unlink
+      end
     end
   end
 
@@ -320,8 +324,10 @@ class CouchDesign
       @contents = {}
       @contents["language"] = "javascript"
       @contents["_id"] = "_design/#{name}"
+      @modified = true
     else
       @contents = jbody
+      @modified = false
     end
   end
 
@@ -330,8 +336,15 @@ class CouchDesign
   end
 
   def rev(newRev = nil)
-    @contents["_rev"] = newRev if newRev
+    if newRev
+      @contents["_rev"] = newRev
+      @modified = true
+    end
     @contents["_rev"]
+  end
+
+  def modified?()
+    @modified
   end
 
   def name()
@@ -364,10 +377,10 @@ class CouchDesign
       func_name = func_name.chomp(File.extname(func_name))
 
       #puts "add util: #{func_name} = #{func}"
-      body = CouchDesign.eval_js(func)
+      body = eval_js(func)
       if body
         @contents[func_name] = body
-
+        @modified = true
         verbose "  [#{func_name}] #{File.basename(func)}"
       end
     }
@@ -411,7 +424,7 @@ class CouchDesign
 
 
       status = JSON.parse(resp.body)
-      @contents["_rev"] = status["rev"]
+      rev(status["rev"])
 
       if status["error"]
         error("#{attfile}: #{status["error"]}: #{status["reason"]}")
@@ -459,27 +472,29 @@ class CouchDesign
   end
 
   def add_show(name, show_file)
-    body = CouchDesign.eval_js(show_file)
+    puts "add_show: evaluating: #{show_file}"
+    body = eval_js(show_file)
     if body
       @contents["shows"] = {} if !@contents["shows"]
       @contents["shows"][name] = body
-
+      @modified = true
       verbose "  [show] #{File.basename(show_file)}"
     end
   end
 
   def add_view(name, hash = {})
     # hash = { "map" => "map-pathname }
+    # puts "add_view: evaluating: #{hash}"
     yield hash if block_given?
 
     @contents["views"] = {} if !@contents["views"]
 
     hash.each_pair { |func, file|
-      body = CouchDesign.eval_js(file)
+      body = eval_js(file)
       if body
         @contents["views"][name] = {} if !@contents["views"][name]
         @contents["views"][name][func] = body
-
+        @modified = true
         verbose "  [view] #{File.basename(file)}"
       end
     }
@@ -522,20 +537,20 @@ class Options
       opts.banner = "Usage: #{PROGRAM_NAME} [OPTION...] DIRECTORY"
       opts.separator ""
       opts.on("-d", "--database [URL]",
-           "CouchDB endpoint URL",
-           "(default: \"#{COUCH_URL}\")") { |url|
+              "CouchDB endpoint URL",
+              "(default: \"#{COUCH_URL}\")") { |url|
         @@database = url
         @@database = @@database[0...-1] if @@database[-1] == "/"
       }
 
       opts.separator ""
       opts.on("-j", "--jspath [JS-PATH]",
-           "Javascript interpreter") { |js|
+              "Javascript interpreter") { |js|
         @@jspath = js
       }
 
       opts.on("-v", "--verbose",
-           "Verbose output") {
+              "Verbose output") {
         @@verbose = true
       }
 
@@ -594,30 +609,36 @@ end
 ARGV.each { |design_dir|
   verbose "Design: #{design_dir}"
 
-  design_name = File.basename(design_dir)
-  design = CouchDesign.new(design_name)
-  design.load(design_dir)
+  begin
+    design_name = File.basename(design_dir)
+    design = CouchDesign.new(design_name)
+    design.load(design_dir)
 
-  Tempfile.open("json") { |tmpfile|
-    tmpfile.write(design.to_json)
-    tmpfile.flush()
+    if design.modified?
+      Tempfile.open("json") { |tmpfile|
+        tmpfile.write(design.to_json)
+        tmpfile.flush()
 
-    resp = Curl.put("#{Options.url}/#{URI.escape(design.id)}",
-                Pathname.new(tmpfile.path),
-                { "Content-Type" => "application/json" })
-    status = JSON.parse(resp.body)
+        resp = Curl.put("#{Options.url}/#{URI.escape(design.id)}",
+                        Pathname.new(tmpfile.path),
+                        { "Content-Type" => "application/json" })
+        status = JSON.parse(resp.body)
 
-    if DEBUG
-      status.each_pair { |k, v|
-        puts "PUT resp [#{k}] = [#{v}]"
+        if DEBUG
+          status.each_pair { |k, v|
+            puts "PUT resp [#{k}] = [#{v}]"
+          }
+        end
+
+        if status["error"]
+          error("#{doc.id}: #{status["error"]}: #{status["reason"]}")
+        else
+          design.rev(status["rev"])
+          verbose "  [revision] #{design.rev}"
+        end
       }
     end
-
-    if status["error"]
-      error("#{doc.id}: #{status["error"]}: #{status["reason"]}")
-    else
-      design.rev(status["rev"])
-      verbose "  [revision] #{design.rev}"
-    end
-  }
+  rescue Exception => e
+    error("#{design_dir}: #{e.message}")
+  end
 }
