@@ -243,14 +243,14 @@ class Curl
     }
 
     if Pathname === body
-      cmdline += " -d @#{body.to_s}"
+      cmdline += " -d '@#{body.to_s}'"
     else
       cmdline += " -d '#{body}'"
     end
 
     cmdline += " '#{url}'"
 
-    #log("PUT: #{cmdline}");
+    log("PUT: #{cmdline}");
     CurlResponse.build(`#{cmdline}`)
   end
 end
@@ -395,6 +395,7 @@ class CouchDesign
     return if !File.directory? att_dir
 
     prefix_len = File.join(att_dir, "").size
+    attached = false
 
     Dir.glob(File.join(att_dir, "**/*")) { |attfile|
       next if File.directory? attfile
@@ -404,7 +405,7 @@ class CouchDesign
       types = MIME::Types::type_for(attfile)
       if types.size == 0
         resp = Curl.head("#{Options.url}/#{id}/#{vpath}")
-        puts "attfile: #{attfile}"
+        #puts "attfile: #{attfile}"
         if resp.headers["Status"].to_i / 100 == 2
           mime = resp.headers["Content-Type"]
         else
@@ -416,22 +417,35 @@ class CouchDesign
       end
 
       #puts "posting #{vpath} (#{mime})"
-      resp = Curl.postForm("#{Options.url}/#{id}",
-                           { "_rev" => @contents["_rev"],
-                             "_attachments" => [ Pathname.new(attfile),
-                                                 vpath, mime ]},
-                           { "Referer" => "#{Options.url}" })
 
+      resp = Curl.put("#{Options.url}/#{id}/#{vpath}?rev=#{rev}",
+                      Pathname.new(attfile),
+                      { "Content-Type" => mime });
 
+      log("form resp: #{resp.body}")
+        
       status = JSON.parse(resp.body)
       rev(status["rev"])
 
       if status["error"]
         error("#{attfile}: #{status["error"]}: #{status["reason"]}")
       else
+        attached = true
         verbose "  [attachment] #{vpath}"
       end
     }
+
+    if attached
+      resp = Curl.get("#{Options.url}/_design/#{URI.escape(name)}")
+      jbody = JSON.parse(resp.body)
+
+      if jbody["error"]
+        raise "#{jbody["error"]}: #{jbody["reason"]}"
+      else
+        @contents = jbody
+        @modified = false
+      end
+    end
   end
 
   def load_shows(shows_dir)
@@ -637,6 +651,8 @@ ARGV.each { |design_dir|
           verbose "  [revision] #{design.rev}"
         end
       }
+    else
+      verbose "  [revision] #{design.rev}"
     end
   rescue Exception => e
     error("#{design_dir}: #{e.message}")
