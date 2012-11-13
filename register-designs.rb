@@ -250,7 +250,7 @@ class Curl
 
     cmdline += " '#{url}'"
 
-    log("PUT: #{cmdline}");
+    #log("PUT: #{cmdline}");
     CurlResponse.build(`#{cmdline}`)
   end
 end
@@ -367,6 +367,7 @@ class CouchDesign
 
   def load(dir)
     load_shows(File.join(dir, "shows"))
+    load_lists(File.join(dir, "lists"))
     load_views(File.join(dir, "views"))
 
     Dir.glob(File.join(dir, "*.js")) { |func|
@@ -463,6 +464,21 @@ class CouchDesign
     }
   end
 
+  def load_lists(lists_dir)
+    return if !File.directory? lists_dir
+
+    Dir.glob(File.join(lists_dir, "*.js")) { |func|
+      # e.g. func == "like/views/when/map.js"
+      next if ! File.file? func
+
+      func_name = File.basename(func)
+      func_name = func_name.chomp(File.extname(func_name))
+
+      #puts "add list: #{func_name} = #{func}"
+      add_list(func_name, func)
+    }
+  end
+
   def load_views(views_dir)
     return if !File.directory? views_dir
 
@@ -486,13 +502,24 @@ class CouchDesign
   end
 
   def add_show(name, show_file)
-    puts "add_show: evaluating: #{show_file}"
+    #puts "add_show: evaluating: #{show_file}"
     body = eval_js(show_file)
     if body
       @contents["shows"] = {} if !@contents["shows"]
       @contents["shows"][name] = body
       @modified = true
       verbose "  [show] #{File.basename(show_file)}"
+    end
+  end
+
+  def add_list(name, list_file)
+    #puts "add_list: evaluating: #{list_file}"
+    body = eval_js(list_file)
+    if body
+      @contents["lists"] = {} if !@contents["lists"]
+      @contents["lists"][name] = body
+      @modified = true
+      verbose "  [list] #{File.basename(list_file)}"
     end
   end
 
