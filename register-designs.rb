@@ -25,7 +25,7 @@ JS_FOOTER = "\nprint(func)"
 
 VERSION="0.2"
 
-DEBUG=false
+DEBUG=true
 
 PROGRAM_NAME = File.basename($PROGRAM_NAME)
 
@@ -392,8 +392,8 @@ class CouchDesign
 
   def register_attachments!(att_dir)
     # THIS FUNCTION WILL DESTROY THE CONSISTENCE OF THE OBJECT!
-    raise "design doc is not loaded" if ! @contents["_rev"]
     return if !File.directory? att_dir
+    raise "design doc is not loaded" if ! @contents["_rev"]
 
     prefix_len = File.join(att_dir, "").size
     attached = false
